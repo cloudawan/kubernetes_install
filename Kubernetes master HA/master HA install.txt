@@ -1,0 +1,394 @@
+# Linux bridge
+sudo apt-get install -y bridge-utils
+
+
+
+# Docker (Latest)
+#wget -qO- https://get.docker.com/ | sh
+
+# Docker (1.6.1)
+sudo vi /etc/apt/sources.list.d/docker.list
+add "deb http://get.docker.com/ubuntu docker main"
+sudo apt-key adv --keyserver pgp.mit.edu --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
+sudo apt-get update
+sudo apt-get install -y lxc-docker-1.6.1
+
+# Docker (1.8.3)
+#wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.8.3-0~wily_amd64.deb
+#sudo dpkg -i docker.deb
+
+
+
+# Generate key to ssh without password (First Node only)
+ssh-keygen
+eval `ssh-agent -s`
+ssh-add ~/.ssh/id_rsa.pub
+ssh-copy-id -i ~/.ssh/id_rsa.pub remote-host
+
+
+
+# Get Kubernetes (First Node only)
+git clone https://github.com/GoogleCloudPlatform/kubernetes.git
+
+# Install kubectl (First Node only)
+sudo ./build/run.sh hack/build-cross.sh
+sudo cp ./_output/dockerized/bin/linux/amd64/kubectl /usr/local/bin/kubectl
+
+
+
+# Use domain name (only lower case is allowed) rather than IP
+
+sudo vi /etc/hosts
+
+Add the following to all nodes
+k8node1 ip1
+k8node2 ip2
+k8node3 ip3
+
+sudo vi /etc/hostname
+Modify the hostname
+
+
+
+============================================================================================================================
+
+# This is not the origin design where the script uses fixed ip for Kubenretes master/node.
+
+# In order to use hostname with dynamic ip rather than fixed ip for Kubenretes master/node. We need to bypass the fixed ip places.
+
+# modify ~/kubernetes/cluster/ubuntu/util.sh since it use ~/kubernetes/cluster/saltbase/salt/generate-cert/make-ca-cert.sh to generate certificate for communication security between containers
+
+The ~/kubernetes/saltbase/salt/generate-cert/make-ca-cert.sh requires IP so the related paramter needs to be changed Since the certificate and ca are used in virtual network, the first ip (physical ip) could be any (Here, we use 127.0.1.1 since this ip should not be used but to indicate a bug fix purpose).
+
+sudo vi ~/kubernetes/cluster/ubuntu/util.sh
+
+Modify ${MASTER_IP} to 127.0.1.1 (2 places)
+
+${PROXY_SETTING} ~/kube/make-ca-cert.sh \"${MASTER_IP}\" \"${EXTRA_SANS}\"  
+
+-> 
+
+${PROXY_SETTING} ~/kube/make-ca-cert.sh \"127.0.1.1\" \"${EXTRA_SANS}\"
+
+Modify ${MASTER_IP} to 127.0.1.1 (2 places)
+
+EXTRA_SANS=(                                               
+    IP:${MASTER_IP}
+    IP:${SERVICE_CLUSTER_IP_RANGE%.*}.1
+    DNS:kubernetes
+    DNS:kubernetes.default
+    DNS:kubernetes.default.svc
+    DNS:kubernetes.default.svc.cluster.local
+  )
+
+->
+
+EXTRA_SANS=(
+    IP:127.0.1.1
+    IP:${SERVICE_CLUSTER_IP_RANGE%.*}.1
+    DNS:kubernetes
+    DNS:kubernetes.default
+    DNS:kubernetes.default.svc
+    DNS:kubernetes.default.svc.cluster.local
+  )
+
+Remove --iface=${2}
+
+FLANNEL_OPTS="--etcd-endpoints=http://${1}:4001 \
+ --ip-masq \
+ --iface=${2}"
+
+-->
+
+FLANNEL_OPTS="--etcd-endpoints=http://${1}:4001 \
+ --ip-masq"
+
+Remove  --advertise-address=${4}\
+
+KUBE_APISERVER_OPTS="\
+ --insecure-bind-address=0.0.0.0\
+ --insecure-port=8080\
+ --etcd-servers=http://127.0.0.1:4001\
+ --logtostderr=true\
+ --service-cluster-ip-range=${1}\
+ --admission-control=${2}\
+ --service-node-port-range=${3}\
+ --advertise-address=${4}\
+ --client-ca-file=/srv/kubernetes/ca.crt\
+ --tls-cert-file=/srv/kubernetes/server.cert\
+ --tls-private-key-file=/srv/kubernetes/server.key"
+
+-->
+
+KUBE_APISERVER_OPTS="\
+ --insecure-bind-address=0.0.0.0\
+ --insecure-port=8080\
+ --etcd-servers=http://127.0.0.1:4001\
+ --logtostderr=true\
+ --service-cluster-ip-range=${1}\
+ --admission-control=${2}\
+ --service-node-port-range=${3}\
+ --client-ca-file=/srv/kubernetes/ca.crt\
+ --tls-cert-file=/srv/kubernetes/server.cert\
+ --tls-private-key-file=/srv/kubernetes/server.key"
+
+============================================================================================================================
+
+
+
+  
+# Modify configuration (First Node only)
+vi ~/kubernetes/cluster/ubuntu/config-default.sh
+
+# Reset Docker networking
+# Remove the default bridge (Optional: this is done by the script)
+#sudo service docker stop
+#sudo ip link set dev docker0 down
+#sudo brctl delbr docker0
+
+# Check iptables rule. The MASQUERADE need to be the subnet used by docker
+# Chain POSTROUTING (policy ACCEPT)
+# target     prot opt source               destination
+# MASQUERADE  all  --  172.16.92.0/24       0.0.0.0/0
+# Check
+#sudo iptables -t nat -L -n
+# Clear
+#sudo iptables -t nat -F
+
+# Run install
+KUBERNETES_PROVIDER=ubuntu ./kube-up.sh (~/kubernetes/cluster/kube-up.sh)
+
+
+
+# Install python-pip and python httplib2
+sudo apt-get update
+sudo apt-get install -y python-pip
+sudo pip install httplib2
+
+
+
+# Modify docker for dynamically remapping network with flannel for changing of physical IP
+# Modify docker configuration
+sudo vi /etc/default/docker
+
+DOCKER_OPTS=" -H tcp://127.0.0.1:4243 -H unix:///var/run/docker.sock --bip=172.16.56.1/24 --mtu=1472"
+
+->
+
+DOCKER_OPTS=" -H tcp://127.0.0.1:4243 -H unix:///var/run/docker.sock"
+
+sudo vi /etc/init/docker.conf
+
+add the flannel dependency to start
+
+	start on (local-filesystems and net-device-up IFACE!=lo)
+
+	->
+
+	start on (local-filesystems and net-device-up IFACE!=lo and started flanneld)
+
+add the following above exec "$DOCKER" -d $DOCKER_OPTS in the script
+
+        until [ -f /run/flannel/subnet.env ]
+        do
+                sleep 1
+        done
+        FLANNEL_SUBNET=
+        FLANNEL_MTU=
+        if [ -f /run/flannel/subnet.env ]; then
+                . /run/flannel/subnet.env
+        fi
+        DOCKER_OPTS="$DOCKER_OPTS --bip=$FLANNEL_SUBNET --mtu=$FLANNEL_MTU"
+        DOCKER_IP=$(/sbin/ifconfig docker0 | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}')
+        DOCKER_SUBNET_PREFIX=$(echo $DOCKER_IP | cut -f1,2,3 -d.)
+        FLANNEL_SUBNET_PREFIX=$(echo $FLANNEL_SUBNET | cut -f1,2,3 -d.)
+        # Reconfigure docker network if it is different
+        if [ ! -z "$DOCKER_SUBNET_PREFIX" ] && [ $DOCKER_SUBNET_PREFIX != $FLANNEL_SUBNET_PREFIX ]; then
+                sudo ip link set dev docker0 down
+                sudo brctl delbr docker0
+                sudo iptables -t nat -F
+        fi
+
+
+
+
+
+# Copy the files from first node to others nodes
+
+/usr/local/bin/kubectl
+
+/opt/bin/etcd
+/opt/bin/etcdctl
+/etc/default/etcd
+/etc/init/etcd.conf
+/etc/init.d/etcd
+
+/srv/kubernetes/ca.crt
+/srv/kubernetes/kubecfg.crt
+/srv/kubernetes/kubecfg.key
+/srv/kubernetes/server.cert
+/srv/kubernetes/server.key
+
+/opt/bin/kube-apiserver
+/etc/default/kube-apiserver
+/etc/init.d/kube-apiserver
+/etc/init/kube-apiserver.conf
+
+/etc/default/kube-controller-manager
+/etc/init.d/kube-controller-manager
+/opt/bin/kube-controller-manager
+/etc/init/kube-controller-manager.conf
+
+/etc/default/kube-scheduler
+/etc/init.d/kube-scheduler
+/opt/bin/kube-scheduler
+/etc/init/kube-scheduler.conf
+
+
+
+# Change the duration before moving pods from dead node to other nodes
+sudo vi /etc/default/kube-controller-manager
+add "--pod_eviction_timeout=10s"
+
+
+
+# Stop automatically start of kube-controller-manager and kube-scheduler
+sudo vi /etc/init/kube-controller-manager.conf
+mark "start on started etcd"
+
+sudo vi /etc/init/kube-scheduler.conf
+mark "start on started etcd"
+
+
+
+# Backup etcd data (First node only)
+# data is lost after re-cluster etcd (the configuration could be reconstruct if knowing how to setup networking and kubernetes) 
+python etcd_backup_restore.py backup
+
+# Cluster etcd
+sudo vi /etc/default/etcd
+
+Change the configuration of each node to the following
+ETCD_OPTS=" -name infra0 -initial-advertise-peer-urls http://k8node1:2380 -listen-peer-urls http://k8node1:2380 -listen-client-urls http://127.0.0.1:4001,http://k8node1:4001 -advertise-client-urls http://k8node1:4001 -initial-cluster-token etcd-cluster-kube-1 -initial-cluster infra0=http://k8node1:2380,infra1=http://k8node2:2380,infra2=http://k8node3:2380 -initial-cluster-state new"
+ETCD_OPTS=" -name infra1 -initial-advertise-peer-urls http://k8node2:2380 -listen-peer-urls http://k8node2:2380 -listen-client-urls http://127.0.0.1:4001,http://k8node2:4001 -advertise-client-urls http://k8node2:4001 -initial-cluster-token etcd-cluster-kube-1 -initial-cluster infra0=http://k8node1:2380,infra1=http://k8node2:2380,infra2=http://k8node3:2380 -initial-cluster-state new"
+ETCD_OPTS=" -name infra2 -initial-advertise-peer-urls http://k8node3:2380 -listen-peer-urls http://k8node3:2380 -listen-client-urls http://127.0.0.1:4001,http://k8node3:4001 -advertise-client-urls http://k8node3:4001 -initial-cluster-token etcd-cluster-kube-1 -initial-cluster infra0=http://k8node1:2380,infra1=http://k8node2:2380,infra2=http://k8node3:2380 -initial-cluster-state new"
+
+sudo service etcd restart
+
+# Restore etcd data (First node only)
+python etcd_backup_restore.py restore
+
+
+
+# Modify kube-proxy
+sudo vi /etc/default/kube-proxy
+
+KUBE_PROXY_OPTS=" --hostname-override=k8node1 --master=http://k8node1:8080  --logtostderr=true"
+
+->
+
+KUBE_PROXY_OPTS=" --hostname-override=k8node1 --master=http://127.0.0.1:8080  --logtostderr=true"
+
+
+
+# Modify kubelet
+sudo vi /etc/default/kubelet
+
+KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node1  --api-servers=http://k8node1:8080  --logtostderr=true  --cluster-dns=172.17.3.10  --cluster-domain=cluster.local"
+
+->
+
+KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node1  --api-servers=http://127.0.0.1:8080  --logtostderr=true  --cluster-dns=172.17.3.10  --cluster-domain=cluster.local"
+
+
+
+# Restart service
+sudo service kube-apiserver restart
+sudo service kubelet restart
+sudo service kube-proxy restart
+
+
+
+# NTP
+sudo apt-get install -y ntp
+ntpq -p
+
+
+
+# Coordinator
+place the files to the following path
+/srv/kube-coordinator/kube-coordinator.py
+/etc/init/kube-coordinator.conf
+
+sudo service kube-coordinator restart
+
+
+
+# Health Check
+place the files to the following path
+/srv/cloudone_node_health/cloudone_node_health.py
+/etc/init/cloudone_node_health.conf
+
+sudo service cloudone_node_health restart
+
+
+
+# Deploy dns
+KUBERNETES_PROVIDER=ubuntu ./deployAddons.sh (~/kubernetes/cluster/ubuntu/deployAddons.sh)
+
+
+
+# Glusterfs (On separate machines) Each node only needs Glusterfs client
+
+# Use version 3.7
+sudo vi /etc/apt/sources.list
+add "deb http://ppa.launchpad.net/gluster/glusterfs-3.7/ubuntu trusty main"
+add "deb-src http://ppa.launchpad.net/gluster/glusterfs-3.7/ubuntu trusty main"
+# Update
+sudo apt-get update
+
+# Install Glusterfs
+sudo apt-get install -y --force-yes glusterfs-server
+
+# Allow to use insecure port so the remote docker instance could issue command (No more required since the way to issue command is changed to ssh login)
+#sudo vi /etc/glusterfs/glusterd.vol
+#add "option rpc-auth-allow-insecure on"
+#sudo service glusterfs-server restart
+
+# Check status
+sudo service glusterfs-server status
+
+# Configure the trusted pool
+sudo gluster peer probe <other_node_ip>
+
+
+
+# private-registry
+
+1. Docker private registry requires strict HTTPS that verify domain name and client side verify with CA certificate. 
+	1. So use the CA and certificate and key in the directory (cacert.pem, private_registry_cert.pem, private_registry_key.pem) where "private-registry" is the domain name used in private_registry_cert.pem. 
+	2. Copy private_registry_cert.pem and private_registry_key.pem to /srv/kubernetes in all nodes. In case, the pod is generated there. 
+
+	sudo mkdir -p /srv/kubernetes
+	sudo mv private_registry_cert.pem /srv/kubernetes/
+	sudo mv private_registry_key.pem /srv/kubernetes/
+
+	3. Create directory /etc/docker/certs.d/private-registry:31000 and cp cacert.pem to /etc/docker/certs.d/private-registry:31000/ca.crt for all nodes
+
+	sudo mkdir -p /etc/docker/certs.d/private-registry:31000
+	sudo mv cacert.pem /etc/docker/certs.d/private-registry:31000/ca.crt
+
+2. Use domain rather than IP (node_ip is the ip of this physical node)
+	1. sudo vi /etc/hosts to add "<node_ip> private-registry" for all nodes.  
+
+3. Create glusterfs endpoint and volume
+	1. Modify glusterfs endpoint file.
+		sudo vi glusterfs-endpoints.json
+	2. Create volume with the path indicated in the file private-registry-controller-wth-glusterfs.json
+		sudo gluster volume create private_registry_volume replica 3 k8node1:/data/glusterfs/private_registry_volume k8node2:/data/glusterfs/private_registry_volume k8node3:/data/glusterfs/private_registry_volume force
+		sudo gluster volume start private_registry_volume
+	
+4. Deploy
+	python create_with_glusterfs.py
+	
+	

@@ -1,0 +1,25 @@
+{
+    "kind":"Service",
+    "apiVersion":"v1",
+    "metadata":{
+        "name":"private-registry",
+        "labels":{
+            "name":"private-registry"
+        }
+    },
+    "spec":{
+        "ports": [
+            {
+                "name": "https",
+                "port": 5000,
+                "targetPort": 5000,
+                "protocol": "TCP",
+                "nodePort": 31000
+            }
+        ],
+        "selector":{
+            "name":"private-registry"
+        },
+        "type": "NodePort"
+    }
+}

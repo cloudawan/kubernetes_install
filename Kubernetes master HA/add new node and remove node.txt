@@ -1,0 +1,179 @@
+# Adding new Kubernetes Node/Minion (Not Master)
+
+# Linux bridge
+sudo apt-get install -y bridge-utils
+
+
+
+# Docker (Latest)
+#wget -qO- https://get.docker.com/ | sh
+
+# Docker (1.6.1)
+sudo vi /etc/apt/sources.list.d/docker.list
+add "deb http://get.docker.com/ubuntu docker main"
+sudo apt-key adv --keyserver pgp.mit.edu --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
+sudo apt-get update
+sudo apt-get install -y lxc-docker-1.6.1
+
+# Docker (1.8.3)
+#wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.8.3-0~wily_amd64.deb
+#sudo dpkg -i docker.deb
+
+
+
+# Install python-pip and python httplib2
+sudo apt-get update
+sudo apt-get install -y python-pip
+sudo pip install httplib2
+
+
+
+# Use domain name (only lower case is allowed) rather than IP
+# If using domain name, all the existing nodes need to update hosts, too.
+sudo vi /etc/hosts
+
+Add the following to all nodes
+k8node1 ip1
+k8node2 ip2
+k8node3 ip3
+k8node4 ip4
+
+sudo vi /etc/hostname
+Modify the hostname
+
+
+
+# Copy the files from first node to target nodes
+~/kube/reconfDocker.sh
+
+/opt/bin/flanneld
+/etc/default/flanneld
+/etc/init/flanneld.conf
+/etc/init.d/flanneld
+
+/opt/bin/kubelet
+/etc/default/kubelet
+/etc/init/kubelet.conf
+/etc/init.d/kubelet
+
+/opt/bin/kube-proxy
+/etc/default/kube-proxy
+/etc/init/kube-proxy.conf
+/etc/init.d/kube-proxy
+
+
+
+# Modify flannel configuration
+sudo vi /etc/default/flanneld
+Change "--etcd-endpoints=http://127.0.0.1:4001" to the etcd cluster
+"--etcd-endpoints=http://127.0.0.1:4001" -> "--etcd-endpoints=http://k8node1:4001,k8node2:4001,k8node3:4001"
+
+sudo service flanneld restart
+
+
+
+# Reconfigure Docker
+sudo ./reconfDocker.sh i
+
+
+
+# Modify kubelet configuration
+sudo vi /etc/default/kubelet
+Change hostname "--hostname-override=k8node1" to this node "--hostname-override=k8node4"
+Change "--api-servers=http://127.0.0.1:8080" to the master cluster "--api-servers=http://k8node1:8080,k8node2:8080,k8node3:8080"
+
+sudo service kubelet restart
+
+
+
+# Modify kube-proxy configuration
+sudo vi /etc/default/kube-proxy
+Change "--master=http://127.0.0.1:8080" to the master cluster "--master=http://k8node1:8080" (Multiple apiserver solution is not supported)
+
+sudo service kube-proxy restart
+
+
+
+# Health Check
+place the files to the following path
+/srv/cloudone_node_health/cloudone_node_health.py
+/etc/init/cloudone_node_health.conf
+
+# modify the etcd path
+sudo vi /srv/cloudone_node_health/cloudone_node_health.py
+Change "self.etcd_host_and_port = "http://127.0.0.1:4001"" to "self.etcd_host_and_port = "http://k8nodeb1:4001""
+
+sudo service cloudone_node_health restart
+
+
+
+# Glusterfs (On separate machines) Each node only needs Glusterfs client
+
+# Use version 3.7
+sudo vi /etc/apt/sources.list
+add "deb http://ppa.launchpad.net/gluster/glusterfs-3.7/ubuntu trusty main"
+add "deb-src http://ppa.launchpad.net/gluster/glusterfs-3.7/ubuntu trusty main"
+# Update
+sudo apt-get update
+
+# Install Glusterfs
+sudo apt-get install -y --force-yes glusterfs-server
+
+# Allow to use insecure port so the remote docker instance could issue command (No more required since the way to issue command is changed to ssh login)
+#sudo vi /etc/glusterfs/glusterd.vol
+#add "option rpc-auth-allow-insecure on"
+#sudo service glusterfs-server restart
+
+# Check status
+sudo service glusterfs-server status
+
+# Configure the trusted pool
+sudo gluster peer probe <other_node_ip>
+
+
+
+# private-registry
+
+1. Docker private registry requires strict HTTPS that verify domain name and client side verify with CA certificate. 
+	1. So use the CA and certificate and key in the directory (cacert.pem, private_registry_cert.pem, private_registry_key.pem) where "private-registry" is the domain name used in private_registry_cert.pem. 
+	2. Copy private_registry_cert.pem and private_registry_key.pem to /srv/kubernetes in all nodes. In case, the pod is generated there. 
+
+	sudo mkdir -p /srv/kubernetes
+	sudo mv private_registry_cert.pem /srv/kubernetes/
+	sudo mv private_registry_key.pem /srv/kubernetes/
+
+	3. Create directory /etc/docker/certs.d/private-registry:31000 and cp cacert.pem to /etc/docker/certs.d/private-registry:31000/ca.crt for all nodes
+
+	sudo mkdir -p /etc/docker/certs.d/private-registry:31000
+	sudo mv cacert.pem /etc/docker/certs.d/private-registry:31000/ca.crt
+
+2. Use domain rather than IP (node_ip is the ip of this physical node)
+	1. sudo vi /etc/hosts to add "<node_ip> private-registry" for all nodes.  
+
+3. Create glusterfs endpoint and volume
+	1. Modify glusterfs endpoint file.
+		sudo vi glusterfs-endpoints.json
+	2. Create volume with the path indicated in the file private-registry-controller-wth-glusterfs.json
+		sudo gluster volume create private_registry_volume replica 3 k8node1:/data/glusterfs/private_registry_volume k8node2:/data/glusterfs/private_registry_volume k8node3:/data/glusterfs/private_registry_volume force
+		sudo gluster volume start private_registry_volume
+	
+4. Deploy
+	python create_with_glusterfs.py
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+	
+	
+# Remove node
+1. Gracefully delete the pod on it.
+2. Shutdown machine
+3. Use kubectl delete node node_name to remove
+4. Remove the flannel subnet

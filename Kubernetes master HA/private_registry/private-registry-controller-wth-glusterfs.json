@@ -1,0 +1,75 @@
+{
+    "kind": "ReplicationController",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "private-registry",
+        "labels": {
+            "name": "private-registry"
+        }
+    },
+    "spec": {
+        "replicas": 1,
+        "selector": {
+            "name": "private-registry"
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "name": "private-registry"
+                }
+            },
+            "spec": {
+                "volumes": [
+                    {
+                        "name": "certificate-volume",
+                        "hostPath": {
+                            "path": "/srv/kubernetes"
+                        }
+                    },
+					{
+                        "name": "private-registry-volume",
+                        "glusterfs": {
+                            "endpoints": "glusterfs",
+                            "path": "private_registry_volume",
+                            "readOnly": false
+                        }
+                    }
+                ],
+                "containers": [
+                    {
+                        "name": "private-registry",
+                        "image": "registry:2",
+                        "ports": [
+                            {
+                                "name": "https", 
+                                "containerPort": 5000
+                            }
+                        ],
+                        "env": [
+                            {
+                                "name": "REGISTRY_HTTP_TLS_CERTIFICATE",
+                                "value": "/certs/private_registry_cert.pem"
+                            },
+                            {
+                                "name": "REGISTRY_HTTP_TLS_KEY",
+                                "value": "/certs/private_registry_key.pem"
+                            }
+                        ],
+                        "volumeMounts": [
+                            {
+                                "name": "certificate-volume",
+                                "readOnly": true,
+                                "mountPath": "/certs"
+                            },
+							{
+                                "name": "private-registry-volume",
+                                "readOnly": false,
+                                "mountPath": "/var/lib/registry"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}
