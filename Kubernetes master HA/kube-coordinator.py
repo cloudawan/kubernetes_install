@@ -29,21 +29,25 @@ class KubeletStatus:
 			return False
 	
 	def is_all_up(self):
-		head, body = self.h.request(self.etcd_url, "GET")
-		if head.status != 200:
-			print "Fail to set self as selected master"
-			print head
-			print body
+		try:
+			head, body = self.h.request(self.etcd_url, "GET")
+			if head.status != 200:
+				print "Fail to set self as selected master"
+				print head
+				print body
+				return False
+			else:
+				body_dictionary = json.loads(body)
+				node_list = body_dictionary.get("node").get("nodes")
+				for node in node_list:
+					value = node.get("value")
+					value_dictionary = json.loads(value)
+					if value_dictionary.get("service").get("kubelet") is False:
+						return False
+				return True
+		except Exception as e:
+			print e
 			return False
-		else:
-			body_dictionary = json.loads(body)
-			node_list = body_dictionary.get("node").get("nodes")
-			for node in node_list:
-				value = node.get("value")
-				value_dictionary = json.loads(value)
-				if value_dictionary.get("service").get("kubelet") is False:
-					return False
-			return True
 
 
 class KubeCoordinator:
@@ -131,7 +135,7 @@ class KubeCoordinator:
 						# Activate after acquiring more than defined time_format
 						first_time = datetime.strptime(first_time_stamp, self.time_format)
 						if (last_time-first_time).total_seconds() > self.waitting_after_accquired:
-							# Check if activated	
+							# Check if activated
 							return True
 					return False
 			elif head.status == 404:
@@ -153,6 +157,5 @@ class KubeCoordinator:
 					self.inactivate_service_if_running("kube-scheduler")
 					self.inactivate_service_if_running("kube-controller-manager")
 			time.sleep(self.check_interval)
-		
 
 KubeCoordinator().loop()
