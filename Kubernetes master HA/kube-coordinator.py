@@ -53,8 +53,8 @@ class KubeletStatus:
 class KubeCoordinator:
 	def __init__(self):
 		self.check_interval = 1
-		self.timeout = 5
-		self.waitting_after_accquired = 5
+		self.timeout = 10
+		self.waitting_after_accquired = 10
 		self.etcd_url = "http://127.0.0.1:4001/v2/keys/cloudawan/master"
 		self.ip = self.__get_ip_address("eth0")
 		self.h = Http()
