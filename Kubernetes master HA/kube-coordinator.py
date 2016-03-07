@@ -10,44 +10,149 @@ import struct
 from subprocess import check_output
 
 
-class KubeletStatus:
+class NodeStatus:
 	def __init__(self):
+		self.maximum_check_amount = 15 * 60 # Check each second
 		self.start = True
 		self.etcd_url = "http://127.0.0.1:4001/v2/keys/cloudawan/cloudone/health"
+		self.kubeapi_url = "http://127.0.0.1:8080/api/v1/nodes"
 		self.h = Http()
-	
-	# This is used to make sure all kubelet are up before start scheduler and controller-manager. Otherwise, the pods are not assigned to those nodes which are under initialization.
-	def should_wait_for_all_kubelet_up_after_start(self):
+		
+	# This is used to make sure all services are up and all nodes are ready before start scheduler and controller-manager. Otherwise, the pods are not assigned to those nodes which are under initialization.
+	def should_wait_for_all_services_up_and_all_nodes_ready_after_start(self):
 		if self.start:
-			result = self.is_all_up()
-			if result:
+			self.maximum_check_amount -= 1
+			if self.maximum_check_amount <= 0:
+				print "After maximum check amount, stop checking"
 				self.start = False
 				return False
 			else:
-				return True
+				result = self.is_all_service_up() and self.is_all_node_ready()
+				if result:
+					print "All services are up and all nodes are ready, stop checking"
+					self.start = False
+					return False
+				else:
+					return True
 		else:
 			return False
 	
-	def is_all_up(self):
+	# This is used to make sure all services are up before start scheduler and controller-manager. Otherwise, the pods are not assigned to those nodes which are under initialization.
+	def should_wait_for_all_services_up_after_start(self):
+		if self.start:
+			self.maximum_check_amount -= 1
+			if self.maximum_check_amount <= 0:
+				print "After maximum check amount, stop checking"
+				self.start = False
+				return False
+			else:
+				result = self.is_all_service_up()
+				if result:
+					print "All services are up, stop checking"
+					self.start = False
+					return False
+				else:
+					return True
+		else:
+			return False
+	
+	def is_all_service_up(self):
 		try:
 			head, body = self.h.request(self.etcd_url, "GET")
 			if head.status != 200:
-				print "Fail to set self as selected master"
+				print "Fail to get the data from etcd"
 				print head
 				print body
 				return False
 			else:
 				body_dictionary = json.loads(body)
 				node_list = body_dictionary.get("node").get("nodes")
+				
+				if len(node_list) == 0:
+					print "No node in the list"
+					return False
+				
 				for node in node_list:
+					ttl = node.get("ttl")
+					if ttl < 0:
+						# Invalid data
+						return False
+					
 					value = node.get("value")
 					value_dictionary = json.loads(value)
+					if value_dictionary.get("service").get("flanneld") is False:
+						return False
+					if value_dictionary.get("flannel").get("ip") is None:
+						return False
+					if value_dictionary.get("service").get("docker") is False:
+						return False
+					if value_dictionary.get("docker").get("ip") is None:
+						return False
 					if value_dictionary.get("service").get("kubelet") is False:
 						return False
+					if value_dictionary.get("service").get("kube-proxy") is False:
+						return False
+					if value_dictionary.get("service").get("kube-apiserver") is False:
+						return False
+					
+				print "All services are ready"
+				print body_dictionary	
 				return True
 		except Exception as e:
 			print e
 			return False
+	
+	# This is used to make sure all node are ready before start scheduler and controller-manager. Otherwise, the pods are not assigned to those nodes which are under initialization.
+	def should_wait_for_all_node_ready_after_start(self):
+		if self.start:
+			self.maximum_check_amount -= 1
+			if self.maximum_check_amount <= 0:
+				print "After maximum check amount, stop checking"
+				self.start = False
+				return False
+			else:
+				result = self.is_all_node_ready()
+				if result:
+					print "All nodes are ready, stop checking"
+					self.start = False
+					return False
+				else:
+					return True
+		else:
+			return False
+	
+	def is_all_node_ready(self):
+		try:
+			head, body = self.h.request(self.kubeapi_url, "GET")
+			if head.status != 200:
+				print "Fail to get the data from kubeapi"
+				print head
+				print body
+				return False
+			else:
+				body_dictionary = json.loads(body)
+				node_list = body_dictionary.get("items")
+				
+				if len(node_list) == 0:
+					print "No node in the list"
+					return False
+				
+				for node in node_list:
+					ready = False
+					condition_list = node.get("status").get("conditions")
+					for condition in condition_list:
+						if condition.get("type") == "Ready":
+							if condition.get("status") == "True":
+								ready = True
+					if ready is False:
+						return False
+				print "All nodes are ready"
+				print body_dictionary
+				return True
+		except Exception as e:
+			print e
+			return False
+		
 
 
 class KubeCoordinator:
@@ -59,7 +164,7 @@ class KubeCoordinator:
 		self.ip = self.__get_ip_address("eth0")
 		self.h = Http()
 		self.time_format = "%Y-%m-%dT%H:%M:%S.%f"
-		self.kubelet_status = KubeletStatus()
+		self.node_status = NodeStatus()
 
 	def __get_ip_address(self, ifname):
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -149,13 +254,15 @@ class KubeCoordinator:
 	def loop(self):
 		while True:
 			# This is used to make sure all kubelet are up before start scheduler and controller-manager. Otherwise, the pods are not assigned to those nodes which are under initialization.
-			if self.kubelet_status.should_wait_for_all_kubelet_up_after_start() is False:
+			if self.node_status.should_wait_for_all_services_up_and_all_nodes_ready_after_start() is False:
 				if self.check():
 					self.activate_service_if_not_running("kube-scheduler")
 					self.activate_service_if_not_running("kube-controller-manager")
 				else:
 					self.inactivate_service_if_running("kube-scheduler")
 					self.inactivate_service_if_running("kube-controller-manager")
+			else:
+				print "Wait for all services to be up and all nodes to be ready, remaining retry: " + str(self.node_status.maximum_check_amount)
 			time.sleep(self.check_interval)
 
 KubeCoordinator().loop()
