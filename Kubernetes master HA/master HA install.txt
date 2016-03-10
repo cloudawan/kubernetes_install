@@ -92,7 +92,7 @@ EXTRA_SANS=(
     DNS:kubernetes.default.svc.cluster.local
   )
 
-Remove --iface=${2}
+Remove --iface=${2} and change IP to local host
 
 FLANNEL_OPTS="--etcd-endpoints=http://${1}:4001 \
  --ip-masq \
@@ -100,7 +100,7 @@ FLANNEL_OPTS="--etcd-endpoints=http://${1}:4001 \
 
 -->
 
-FLANNEL_OPTS="--etcd-endpoints=http://${1}:4001 \
+FLANNEL_OPTS="--etcd-endpoints=http://127.0.0.1:4001 \
  --ip-masq"
 
 Remove  --advertise-address=${4}\
