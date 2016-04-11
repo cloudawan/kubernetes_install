@@ -7,16 +7,22 @@ sudo apt-get install -y bridge-utils
 #wget -qO- https://get.docker.com/ | sh
 
 # Docker (1.6.1)
-sudo vi /etc/apt/sources.list.d/docker.list
-add "deb http://get.docker.com/ubuntu docker main"
-sudo apt-key adv --keyserver pgp.mit.edu --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
-sudo apt-get update
-sudo apt-get install -y lxc-docker-1.6.1
+#sudo vi /etc/apt/sources.list.d/docker.list
+#add "deb http://get.docker.com/ubuntu docker main"
+#sudo apt-key adv --keyserver pgp.mit.edu --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
+#sudo apt-get update
+#sudo apt-get install -y lxc-docker-1.6.1
 
 # Docker (1.8.3)
 #wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.8.3-0~wily_amd64.deb
 #sudo dpkg -i docker.deb
 
+# Docker (1.10.3)
+sudo vi /etc/apt/sources.list.d/docker.list
+add "deb https://apt.dockerproject.org/repo ubuntu-trusty main"
+sudo apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
+sudo apt-get update
+sudo apt-get install -y docker-engine
 
 
 # Generate key to ssh without password (First Node only)
@@ -298,7 +304,7 @@ KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node1  --ap
 
 ->
 
-KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node1  --api-servers=http://127.0.0.1:8080  --logtostderr=true  --cluster-dns=172.17.3.10  --cluster-domain=cluster.local"
+KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node1  --api-servers=http://127.0.0.1:8080  --logtostderr=true  --cluster-dns=172.17.3.10  --cluster-domain=cluster.local  --housekeeping-interval=1s"
 
 
 
@@ -391,4 +397,4 @@ sudo gluster peer probe <other_node_ip>
 4. Deploy
 	python create_with_glusterfs.py
 	
-	
+
