@@ -13,8 +13,8 @@ sudo apt-get install -y bridge-utils
 #sudo apt-get update
 #sudo apt-get install -y lxc-docker-1.6.1
 
-# Docker (1.8.3)
-#wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.8.3-0~wily_amd64.deb
+# Docker (1.10.3)
+#wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.10.3-0~trusty_amd64.deb
 #sudo dpkg -i docker.deb
 
 # Docker (1.10.3)
@@ -346,6 +346,8 @@ KUBERNETES_PROVIDER=ubuntu ./deployAddons.sh (~/kubernetes/cluster/ubuntu/deploy
 
 # Glusterfs (On separate machines) Each node only needs Glusterfs client
 
+# Glusterfs servers require NTP to synchronize
+
 # Use version 3.7
 sudo vi /etc/apt/sources.list
 add "deb http://ppa.launchpad.net/gluster/glusterfs-3.7/ubuntu trusty main"
@@ -369,7 +371,7 @@ sudo gluster peer probe <other_node_ip>
 
 
 
-# private-registry
+# Private-registry
 
 1. Docker private registry requires strict HTTPS that verify domain name and client side verify with CA certificate. 
 	1. So use the CA and certificate and key in the directory (cacert.pem, private_registry_cert.pem, private_registry_key.pem) where "private-registry" is the domain name used in private_registry_cert.pem. 
@@ -396,5 +398,18 @@ sudo gluster peer probe <other_node_ip>
 	
 4. Deploy
 	python create_with_glusterfs.py
-	
 
+	
+	
+	
+# Cloudone
+
+For ElasticSearch, its gluster volume needs to configure as the following due to the lucene's frequently rename the files.
+
+sudo gluster volume set cloudone_elasticsearch_volume performance.md-cache-timeout 0
+sudo gluster volume set cloudone_elasticsearch_volume performance.write-behind off
+sudo gluster volume set cloudone_elasticsearch_volume performance.read-ahead off
+sudo gluster volume set cloudone_elasticsearch_volume performance.io-cache off
+sudo gluster volume set cloudone_elasticsearch_volume performance.quick-read off
+sudo gluster volume set cloudone_elasticsearch_volume performance.stat-prefetch off
+sudo gluster volume set cloudone_elasticsearch_volume performance.readdir-ahead off
