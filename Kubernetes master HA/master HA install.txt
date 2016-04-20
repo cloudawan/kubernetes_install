@@ -22,7 +22,7 @@ sudo vi /etc/apt/sources.list.d/docker.list
 add "deb https://apt.dockerproject.org/repo ubuntu-trusty main"
 sudo apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
 sudo apt-get update
-sudo apt-get install -y docker-engine
+sudo apt-get install -y docker-engine=1.10.3-0~trusty
 
 
 # Generate key to ssh without password (First Node only)
@@ -401,7 +401,7 @@ sudo gluster peer probe <other_node_ip>
 
 	
 	
-	
+
 # Cloudone
 
 For ElasticSearch, its gluster volume needs to configure as the following due to the lucene's frequently rename the files.
@@ -413,3 +413,12 @@ sudo gluster volume set cloudone_elasticsearch_volume performance.io-cache off
 sudo gluster volume set cloudone_elasticsearch_volume performance.quick-read off
 sudo gluster volume set cloudone_elasticsearch_volume performance.stat-prefetch off
 sudo gluster volume set cloudone_elasticsearch_volume performance.readdir-ahead off
+
+
+
+# Multi-site
+Add label region and zone to Node label
+kubectl get node node_name
+modify file to remove "resourceVersion" field
+modify file to add label "region": "region_name",  "zone": "zone_name"
+kubectl replace node node_name -f file

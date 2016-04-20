@@ -84,7 +84,7 @@ class CloudOneNodeHealth:
 			"value": json.dumps(data_dictionary),
 			"ttl": self.status_ttl_in_second
 		})
-		head, body = self.h.request(self.etcd_host_and_port + "/v2/keys/cloudawan/cloudone/health/" + self.ip + "?" + encoded_parameter, "PUT")
+		head, body = self.h.request(self.etcd_host_and_port + "/v2/keys/cloudawan/cloudone/health/" + str(self.ip) + "?" + encoded_parameter, "PUT")
 		if head.status != 200 and head.status != 201:
 			print "Fail to save health status"
 			print data_dictionary

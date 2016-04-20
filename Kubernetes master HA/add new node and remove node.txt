@@ -9,15 +9,28 @@ sudo apt-get install -y bridge-utils
 #wget -qO- https://get.docker.com/ | sh
 
 # Docker (1.6.1)
-sudo vi /etc/apt/sources.list.d/docker.list
-add "deb http://get.docker.com/ubuntu docker main"
-sudo apt-key adv --keyserver pgp.mit.edu --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
-sudo apt-get update
-sudo apt-get install -y lxc-docker-1.6.1
+#sudo vi /etc/apt/sources.list.d/docker.list
+#add "deb http://get.docker.com/ubuntu docker main"
+#sudo apt-key adv --keyserver pgp.mit.edu --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
+#sudo apt-get update
+#sudo apt-get install -y lxc-docker-1.6.1
 
-# Docker (1.8.3)
-#wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.8.3-0~wily_amd64.deb
+# Docker (1.10.3)
+#wget -O docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_1.10.3-0~trusty_amd64.deb
 #sudo dpkg -i docker.deb
+
+# Docker (1.10.3)
+sudo vi /etc/apt/sources.list.d/docker.list
+add "deb https://apt.dockerproject.org/repo ubuntu-trusty main"
+sudo apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
+sudo apt-get update
+sudo apt-get install -y docker-engine=1.10.3-0~trusty
+
+
+
+# NTP
+sudo apt-get install -y ntp
+ntpq -p
 
 
 
@@ -32,11 +45,11 @@ sudo pip install httplib2
 # If using domain name, all the existing nodes need to update hosts, too.
 sudo vi /etc/hosts
 
-Add the following to all nodes
-k8node1 ip1
-k8node2 ip2
-k8node3 ip3
-k8node4 ip4
+Add the following to the new added node
+ip1 k8node1 
+ip2 k8node2 
+ip3 k8node3 
+ip4 k8node4
 
 sudo vi /etc/hostname
 Modify the hostname
@@ -81,6 +94,14 @@ sudo ./reconfDocker.sh i
 sudo vi /etc/default/kubelet
 Change hostname "--hostname-override=k8node1" to this node "--hostname-override=k8node4"
 Change "--api-servers=http://127.0.0.1:8080" to the master cluster "--api-servers=http://k8node1:8080,k8node2:8080,k8node3:8080"
+Add "--housekeeping-interval=1s"
+
+KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node1  --api-servers=http://127.0.0.1:8080  --logtostderr=true  --cluster-dns=172.17.3.10  --cluster-domain=cluster.local"
+
+->
+
+KUBELET_OPTS=" --address=0.0.0.0 --port=10250  --hostname-override=k8node4  --api-servers=k8node1:8080,k8node2:8080,k8node3:8080  --logtostderr=true  --cluster-dns=172.17.3.10  --cluster-domain=cluster.local  --housekeeping-interval=1s"
+
 
 sudo service kubelet restart
 
@@ -94,6 +115,70 @@ sudo service kube-proxy restart
 
 
 
+# Modify flannel upstart since there is no etcd on Node
+sudo vi /etc/init/flanneld.conf
+
+Change etcd to network device
+
+	"start on started etcd"
+
+	->
+
+	"start on net-device-up IFACE!=lo"
+
+Change etcd to runlevel
+	
+	"stop on stopping etcd"
+
+	->
+
+	"stop on runlevel [!2345]"
+
+
+# Modify docker for dynamically remapping network with flannel for changing of physical IP
+# Modify docker configuration
+sudo vi /etc/default/docker
+
+DOCKER_OPTS=" -H tcp://127.0.0.1:4243 -H unix:///var/run/docker.sock --bip=172.16.56.1/24 --mtu=1472"
+
+->
+
+DOCKER_OPTS=" -H tcp://127.0.0.1:4243 -H unix:///var/run/docker.sock"
+
+sudo vi /etc/init/docker.conf
+
+add the flannel dependency to start
+
+	start on (local-filesystems and net-device-up IFACE!=lo)
+
+	->
+
+	start on (local-filesystems and net-device-up IFACE!=lo and started flanneld)
+
+add the following above exec "$DOCKER" -d $DOCKER_OPTS in the script
+
+        until [ -f /run/flannel/subnet.env ]
+        do
+                sleep 1
+        done
+        FLANNEL_SUBNET=
+        FLANNEL_MTU=
+        if [ -f /run/flannel/subnet.env ]; then
+                . /run/flannel/subnet.env
+        fi
+        DOCKER_OPTS="$DOCKER_OPTS --bip=$FLANNEL_SUBNET --mtu=$FLANNEL_MTU"
+        DOCKER_IP=$(/sbin/ifconfig docker0 | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}')
+        DOCKER_SUBNET_PREFIX=$(echo $DOCKER_IP | cut -f1,2,3 -d.)
+        FLANNEL_SUBNET_PREFIX=$(echo $FLANNEL_SUBNET | cut -f1,2,3 -d.)
+        # Reconfigure docker network if it is different
+        if [ ! -z "$DOCKER_SUBNET_PREFIX" ] && [ $DOCKER_SUBNET_PREFIX != $FLANNEL_SUBNET_PREFIX ]; then
+                sudo ip link set dev docker0 down
+                sudo brctl delbr docker0
+                sudo iptables -t nat -F
+        fi
+
+
+		
 # Health Check
 place the files to the following path
 /srv/cloudone_node_health/cloudone_node_health.py
@@ -125,10 +210,10 @@ sudo apt-get install -y --force-yes glusterfs-server
 #sudo service glusterfs-server restart
 
 # Check status
-sudo service glusterfs-server status
+#sudo service glusterfs-server status
 
 # Configure the trusted pool
-sudo gluster peer probe <other_node_ip>
+#sudo gluster peer probe <other_node_ip>
 
 
 
