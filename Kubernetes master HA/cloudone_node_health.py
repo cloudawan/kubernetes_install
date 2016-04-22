@@ -13,12 +13,12 @@ from httplib2 import Http
 
 
 class UTC(tzinfo):
-    def utcoffset(self, dt):
-        return timedelta(0)
-    def tzname(self, dt):
-        return "UTC"
-    def dst(self, dt):
-        return timedelta(0)
+	def utcoffset(self, dt):
+		return timedelta(0)
+	def tzname(self, dt):
+		return "UTC"
+	def dst(self, dt):
+		return timedelta(0)
 
 
 class CloudOneNodeHealth:
@@ -30,7 +30,7 @@ class CloudOneNodeHealth:
 		self.ip = self.__get_ip_address("eth0")
 		self.etcd_host_and_port = "http://127.0.0.1:4001"
 		self.h = Http()
-		
+
 	def __get_ip_address(self, ifname):
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		try:
@@ -44,7 +44,7 @@ class CloudOneNodeHealth:
 			ip = None
 		s.close()
 		return ip
-		
+
 	def __is_service_running(self, name):
 		try:
 			result = check_output(["sudo", "service", name, "status"])
@@ -54,7 +54,7 @@ class CloudOneNodeHealth:
 				return False
 		except Exception as e:
 			return False
-			
+
 	def health_check(self):
 		try:
 			status_dictionary = dict()
@@ -67,10 +67,10 @@ class CloudOneNodeHealth:
 			status_dictionary["service"]["kube-scheduler"] = self.__is_service_running("kube-scheduler")
 			status_dictionary["service"]["kube-proxy"] = self.__is_service_running("kube-proxy")
 			status_dictionary["service"]["kubelet"] = self.__is_service_running("kubelet")
-						
+
 			status_dictionary["docker"] = dict()
 			status_dictionary["docker"]["ip"] = self.__get_ip_address("docker0")
-			
+
 			status_dictionary["flannel"] = dict()
 			status_dictionary["flannel"]["ip"] = self.__get_ip_address("flannel.1")
 
@@ -78,7 +78,7 @@ class CloudOneNodeHealth:
 		except Exception as e:
 			print e
 			traceback.print_stack()
-		
+
 	def __save_health_status(self, data_dictionary):
 		encoded_parameter = urllib.urlencode({
 			"value": json.dumps(data_dictionary),
