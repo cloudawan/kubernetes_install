@@ -22,12 +22,13 @@ class UTC(tzinfo):
 
 
 class CloudOneNodeHealth:
+	# Define host type here. Mark the unused type
 	HostTypeKubernetes = "kubernetes"
 	HostTypeGlusterfs = "glusterfs"
 	HostTypeSLB = "slb"
 
 	def __init__(self):
-		self.host_type_list = [CloudOneNodeHealth.HostTypeKubernetes]
+		self.host_type_list = self.__get_host_type_list_from_attribute()
 		self.check_interval = 1
 		self.status_ttl_in_second = 10
 		# ISO 8601 format: YYYY-MM-DDTHH:MM:SS.mmmmmm+HH:MM
@@ -37,6 +38,16 @@ class CloudOneNodeHealth:
 		self.h = Http(timeout=10)
 		# HAProxy slb command file
 		self.slb_command_file_path = "/etc/haproxy/haproxy.cfg.command"
+
+	def __get_host_type_list_from_attribute(self):
+		host_type_list=[]
+		if hasattr(self, "HostTypeKubernetes"):
+			host_type_list.append(self.HostTypeKubernetes)
+		if hasattr(self, "HostTypeGlusterfs"):
+			host_type_list.append(self.HostTypeGlusterfs)
+		if hasattr(self, "HostTypeSLB"):
+			host_type_list.append(self.HostTypeSLB)
+		return host_type_list
 
 	def __get_ip_address(self, ifname):
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -78,7 +89,7 @@ class CloudOneNodeHealth:
 			status_dictionary["service"] = dict()
 			
 			# Kubernetes
-			if CloudOneNodeHealth.HostTypeKubernetes in self.host_type_list:
+			if hasattr(self, "HostTypeKubernetes"):
 				status_dictionary["service"]["flanneld"] = self.__is_service_running("flanneld")
 				status_dictionary["service"]["docker"] = self.__is_service_running("docker")
 				status_dictionary["service"]["kube-apiserver"] = self.__is_service_running("kube-apiserver")
@@ -93,10 +104,10 @@ class CloudOneNodeHealth:
 				status_dictionary["flannel"] = dict()
 				status_dictionary["flannel"]["ip"] = self.__get_ip_address("flannel.1")
 			# Glusterfs
-			if CloudOneNodeHealth.HostTypeGlusterfs in self.host_type_list:
+			if hasattr(self, "HostTypeGlusterfs"):
 				status_dictionary["service"]["glusterfs-server"] = self.__is_service_running("glusterfs-server")
 			# SLB
-			if CloudOneNodeHealth.HostTypeSLB in self.host_type_list:
+			if hasattr(self, "HostTypeSLB"):
 				status_dictionary["service"]["haproxy"] = self.__is_service_running("haproxy", has_keyword="running")
 				status_dictionary["service"]["keepalived"] = self.__is_service_running("keepalived", has_no_keyword="No such file or directory", command_list=["cat", "/var/run/keepalived.pid"])
 				status_dictionary["service"]["cloudone_slb"] = self.__is_service_running("cloudone_slb")
